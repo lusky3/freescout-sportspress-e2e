@@ -179,6 +179,25 @@ curl_close(\$ch);
 
 echo "HTTP STATUS: \$status\n";
 echo "BODY: \$response\n";
+
+// This is the actual pass/fail gate, not just a print for a human to
+// eyeball -- a non-2xx status, or a response missing the fixture's
+// expected 'queued' entry, means the WP<->FreeScout chain is broken, and
+// this script (and CI, which runs it as its own check) needs to fail
+// loudly rather than report a misleadingly clean exit.
+\$data = json_decode((string) \$response, true);
+\$ok = \$status === 200
+    && is_array(\$data)
+    && isset(\$data['entries']) && is_array(\$data['entries'])
+    && count(\$data['entries']) > 0
+    && \$data['entries'][0]['status'] === 'queued';
+
+if (!\$ok) {
+    fwrite(STDERR, "End-to-end verification FAILED: expected HTTP 200 with a queued entry.\n");
+    exit(1);
+}
+
+echo "End-to-end verification passed: WordPress returned a queued waitlist entry to FreeScout.\n";
 PHP
 docker cp /tmp/splm-e2e-hmac-check.php "$($COMPOSE ps -q freescout-app)":/tmp/splm-e2e-hmac-check.php
 $COMPOSE exec freescout-app php /tmp/splm-e2e-hmac-check.php
