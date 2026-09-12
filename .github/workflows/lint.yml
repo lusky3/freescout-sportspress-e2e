@@ -1,0 +1,64 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Shell, Dockerfile & YAML checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ShellCheck (run-e2e.sh)
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          scandir: '.'
+          ignore_paths: freescout-core
+
+      - name: Hadolint (freescout-docker/php/Dockerfile)
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: freescout-docker/php/Dockerfile
+
+      # This repo's only purpose is docker-compose.yml, so validating it
+      # parses AND that Compose itself accepts it (variable interpolation,
+      # service/network references) both matter -- a YAML-valid file can
+      # still be an invalid Compose file.
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
+
+      # A workflow file that does not parse produces a zero-second failed
+      # run with no jobs and no log, which is a miserable thing to debug.
+      - name: Validate workflow YAML
+        run: |
+          python3 - <<'PY'
+          import sys, pathlib, yaml
+          failed = False
+          for path in sorted(pathlib.Path('.github/workflows').glob('*.yml')):
+              try:
+                  yaml.safe_load(path.read_text())
+              except yaml.YAMLError as exc:
+                  failed = True
+                  print(f"::error file={path}::{exc}")
+          sys.exit(1 if failed else 0)
+          PY

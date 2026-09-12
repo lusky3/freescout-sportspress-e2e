@@ -1,0 +1,74 @@
+name: E2E
+
+# This is the one check that actually matters for this repo: does the whole
+# chain -- a real WordPress+SportsPress+WooCommerce site, a real FreeScout
+# instance, and the SplmWaitlist module between them -- still work end to
+# end? Lint/shellcheck only prove the files are well-formed; this proves the
+# integration itself hasn't silently broken (e.g. a route renamed on the WP
+# side, a module option key changed on the FreeScout side, an upstream base
+# image update).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Nothing in this repo needs to change for the integration to break --
+    # an upstream base image, WordPress/SportsPress/WooCommerce release, or
+    # a change on either sibling repo's main branch can do it silently.
+    - cron: '11 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Full stack end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      # Checked out into its own named subdirectory rather than the
+      # workspace root: docker-compose.yml's relative sibling paths
+      # (../sportspress-sandbox, ../SportsPress-Admin-Tools,
+      # ../freescout-splm-waitlist) need this repo to sit alongside those
+      # three, exactly like the local `~/git/*` layout the README documents.
+      - name: Checkout this repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: freescout-sportspress-e2e
+          persist-credentials: false
+
+      # All three are public repos; shallow, unauthenticated clones are
+      # enough since none of run-e2e.sh needs their history.
+      - name: Checkout sibling repos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/lusky3/sportspress-sandbox.git sportspress-sandbox
+          git clone --depth 1 https://github.com/lusky3/SportsPress-Admin-Tools.git SportsPress-Admin-Tools
+          git clone --depth 1 https://github.com/lusky3/freescout-splm-waitlist.git freescout-splm-waitlist
+
+      # Compose v2 and Docker are preinstalled on ubuntu-latest runners.
+      - name: Run the end-to-end stack
+        working-directory: freescout-sportspress-e2e
+        run: ./run-e2e.sh
+
+      - name: Show container logs on failure
+        if: failure()
+        working-directory: freescout-sportspress-e2e
+        run: |
+          docker compose logs --tail=200 || true
+
+      - name: Tear down
+        if: always()
+        working-directory: freescout-sportspress-e2e
+        run: docker compose down -v || true

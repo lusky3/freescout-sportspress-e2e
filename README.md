@@ -1,5 +1,8 @@
 # freescout-sportspress-e2e
 
+[![E2E](https://github.com/lusky3/freescout-sportspress-e2e/actions/workflows/e2e.yml/badge.svg)](https://github.com/lusky3/freescout-sportspress-e2e/actions/workflows/e2e.yml)
+[![Lint](https://github.com/lusky3/freescout-sportspress-e2e/actions/workflows/lint.yml/badge.svg)](https://github.com/lusky3/freescout-sportspress-e2e/actions/workflows/lint.yml)
+
 A combined Docker Compose environment for exercising the FreeScout
 **SportsPress Waitlist Status** module end-to-end: a real WordPress +
 SportsPress + WooCommerce site, with a real queued waitlist entry, talking
