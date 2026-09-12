@@ -1,0 +1,142 @@
+# FreeScout <-> SportsPress Waitlist Status: combined end-to-end test stack
+# ===========================================================================
+# Wires together a real WordPress+SportsPress+WooCommerce site (reusing
+# sportspress-sandbox's Dockerfile) with a real FreeScout instance running
+# the SplmWaitlist module (reusing freescout-splm-waitlist's docker/ dev
+# harness pattern), on one shared bridge network, so the module can reach
+# WordPress at http://sportspress-test and a human/agent can open a
+# conversation in FreeScout and see the waitlist status in the sidebar.
+#
+# Usage: ./run-e2e.sh   (see that script for the full orchestration)
+#        docker compose up -d --build
+#        docker compose down -v      # tear down, including volumes
+
+services:
+  # --- SportsPress side (WordPress + SportsPress + MariaDB + WooCommerce) ---
+  # Reuses sportspress-sandbox's own Dockerfile/build context unchanged.
+  # No explicit container_name: Compose derives one from the project name
+  # (the directory this file lives in) so this never collides with a
+  # separately-running sportspress-sandbox stack. Host port 8092 (not 8082)
+  # for the same reason.
+  sportspress-test:
+    build:
+      context: ../sportspress-sandbox
+      dockerfile: Dockerfile
+    ports:
+      - "8092:80"
+    volumes:
+      # NOTE on sportspress-league-manager: the customer-status REST route
+      # (POST /wp-json/splm/v1/waitlist/customer-status) that this whole
+      # e2e stack exists to exercise is not yet on SportsPress-Admin-Tools's
+      # main branch as of this writing -- it only exists on the
+      # `worktree-freescout-waitlist-integration` branch/worktree. Mounting
+      # the literal sibling path (../SportsPress-Admin-Tools/...) would give
+      # you a SportsPress site WITHOUT that route, and the whole point of
+      # this repo is to prove the route + module work together. So this
+      # path is overridable via LEAGUE_MANAGER_PATH (see .env), defaulting
+      # to the plain sibling-repo path once the feature lands on main.
+      - ${LEAGUE_MANAGER_PATH:-../SportsPress-Admin-Tools/sportspress-league-manager}:/var/www/html/wp-content/plugins/sportspress-league-manager
+      - ../SportsPress-Admin-Tools/sportspress-admin-tools:/var/www/html/wp-content/plugins/sportspress-admin-tools
+      - ../SportsPress-Admin-Tools/sportspress-etransfer-automation:/var/www/html/wp-content/plugins/sportspress-etransfer-automation
+      - ../SportsPress-Admin-Tools/sportspress-events-manager:/var/www/html/wp-content/plugins/sportspress-events-manager
+      - ../SportsPress-Admin-Tools/sportspress-player-registration:/var/www/html/wp-content/plugins/sportspress-player-registration
+      - ../SportsPress-Admin-Tools/sportspress-player-tools:/var/www/html/wp-content/plugins/sportspress-player-tools
+      - ../SportsPress-Admin-Tools/sportspress-schedule-generator:/var/www/html/wp-content/plugins/sportspress-schedule-generator
+      - ../SportsPress-Admin-Tools/sportspress-score-sheets:/var/www/html/wp-content/plugins/sportspress-score-sheets
+      - sp-baseline:/var/lib/baseline
+      - sp-screenshots:/screenshots
+      - sp-test-results:/test-results
+    tmpfs:
+      - /dev/shm:size=256m
+    environment:
+      - WORDPRESS_DB_HOST=localhost:/run/mysqld/mysqld.sock
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=wordpress
+      - WORDPRESS_DB_NAME=wordpress
+      - SPORTSPRESS_SPORT=ice-hockey
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/wp-json/test/v1/health | grep -q '\"status\":\"ready\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  # --- FreeScout side ---
+  freescout-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: freescout_root
+      MYSQL_DATABASE: freescout
+      MYSQL_USER: freescout
+      MYSQL_PASSWORD: freescout
+    volumes:
+      - freescout-db-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:33064:3306"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -pfreescout_root --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  freescout-app:
+    build:
+      context: ./freescout-docker/php
+    volumes:
+      # FreeScout core, cloned fresh into ./freescout-core (gitignored) by
+      # run-e2e.sh -- NOT shared with freescout-splm-waitlist's own separate
+      # clone under that repo's docker/freescout.
+      - ./freescout-core:/var/www/html
+      # The actual module source, bind-mounted straight from the sibling
+      # repo -- this is the real code under test, not a copy.
+      - ../freescout-splm-waitlist:/var/www/html/Modules/SplmWaitlist
+      # Circular-mount guard: freescout-splm-waitlist/docker/ is that
+      # repo's OWN separate dev harness (a different docker-compose.yml,
+      # its own nginx/php dirs). Because the line above mounts the whole
+      # freescout-splm-waitlist repo into Modules/SplmWaitlist, that
+      # harness's docker/ directory would otherwise appear (harmlessly,
+      # since nothing here ever executes it) at
+      # Modules/SplmWaitlist/docker/ inside the container. It is NOT an
+      # actual bind-mount recursion loop (that failure mode is mounting a
+      # directory into a path inside itself on the SAME host tree, e.g. a
+      # volume rooted at repo X mounted again under repo X); here it's two
+      # independent sibling repos, so nothing loops. It's excluded anyway,
+      # via the same empty-named-volume trick the module repo's own
+      # compose file uses, purely so this container never has any reason
+      # to read or execute that other harness's files.
+      - module-docker-dir-excluded:/var/www/html/Modules/SplmWaitlist/docker
+    working_dir: /var/www/html
+    command: ["sh", "-c", "chmod -R 777 storage bootstrap/cache Modules 2>/dev/null; php-fpm"]
+    depends_on:
+      freescout-db:
+        condition: service_healthy
+    networks:
+      - e2e-net
+
+  freescout-web:
+    image: nginx:1.25-alpine
+    volumes:
+      - ./freescout-core:/var/www/html
+      - ./freescout-docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8093:80"
+    depends_on:
+      - freescout-app
+    networks:
+      - e2e-net
+
+networks:
+  e2e-net:
+    driver: bridge
+
+volumes:
+  sp-baseline:
+  sp-screenshots:
+  sp-test-results:
+  freescout-db-data:
+  module-docker-dir-excluded:

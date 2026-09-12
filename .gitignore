@@ -1,0 +1,13 @@
+# FreeScout core is cloned fresh by run-e2e.sh -- not tracked here.
+/freescout-core/
+
+# In case anything ever runs composer/npm locally outside the container.
+/vendor/
+/node_modules/
+
+# Docker/compose cruft
+*.log
+.DS_Store
+
+# Secrets generated at runtime by run-e2e.sh (shared HMAC secret, admin creds)
+/.e2e-secrets
