@@ -11,3 +11,7 @@
 
 # Secrets generated at runtime by run-e2e.sh (shared HMAC secret, admin creds)
 /.e2e-secrets
+
+# Local-only override for LEAGUE_MANAGER_PATH (see README) -- never committed,
+# since it typically points at a path specific to one machine.
+/.env

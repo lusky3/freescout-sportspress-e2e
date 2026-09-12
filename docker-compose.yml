@@ -27,14 +27,11 @@ services:
     volumes:
       # NOTE on sportspress-league-manager: the customer-status REST route
       # (POST /wp-json/splm/v1/waitlist/customer-status) that this whole
-      # e2e stack exists to exercise is not yet on SportsPress-Admin-Tools's
-      # main branch as of this writing -- it only exists on the
-      # `worktree-freescout-waitlist-integration` branch/worktree. Mounting
-      # the literal sibling path (../SportsPress-Admin-Tools/...) would give
-      # you a SportsPress site WITHOUT that route, and the whole point of
-      # this repo is to prove the route + module work together. So this
-      # path is overridable via LEAGUE_MANAGER_PATH (see .env), defaulting
-      # to the plain sibling-repo path once the feature lands on main.
+      # e2e stack exists to exercise has merged to SportsPress-Admin-Tools's
+      # main branch, so the plain sibling path below resolves correctly with
+      # no override needed. LEAGUE_MANAGER_PATH stays as an escape hatch --
+      # set it in a local, gitignored .env if you ever need to point this
+      # stack at a different checkout or branch of that plugin instead.
       - ${LEAGUE_MANAGER_PATH:-../SportsPress-Admin-Tools/sportspress-league-manager}:/var/www/html/wp-content/plugins/sportspress-league-manager
       - ../SportsPress-Admin-Tools/sportspress-admin-tools:/var/www/html/wp-content/plugins/sportspress-admin-tools
       - ../SportsPress-Admin-Tools/sportspress-etransfer-automation:/var/www/html/wp-content/plugins/sportspress-etransfer-automation

@@ -33,13 +33,15 @@ root rather than under a `docker/` subdirectory.
 ### On the `sportspress-league-manager` mount path
 
 The customer-status REST route this whole stack exists to exercise
-(`POST /wp-json/splm/v1/waitlist/customer-status`) is not yet on
-`SportsPress-Admin-Tools`'s `main` branch as of this writing -- only on the
-`worktree-freescout-waitlist-integration` branch/worktree. `docker-compose.yml`
-mounts `${LEAGUE_MANAGER_PATH:-../SportsPress-Admin-Tools/sportspress-league-manager}`,
-and `.env` currently pins `LEAGUE_MANAGER_PATH` to that worktree's checkout.
-Once the feature merges to `main`, delete that line from `.env` (or point it
-back at the plain sibling path) and the default takes over.
+(`POST /wp-json/splm/v1/waitlist/customer-status`) merged to
+`SportsPress-Admin-Tools`'s `main` branch shortly after this environment was
+first built (it lived only on a feature branch/worktree at first).
+`docker-compose.yml` mounts
+`${LEAGUE_MANAGER_PATH:-../SportsPress-Admin-Tools/sportspress-league-manager}`,
+which now resolves correctly with no override needed -- plain `main` has the
+route. `LEAGUE_MANAGER_PATH` is still there as an escape hatch: set it (e.g.
+via a local `.env`, gitignored, not committed) if you ever need to point this
+stack at a different checkout or branch of that plugin.
 
 ### On the module's own `docker/` directory
 
